@@ -2,7 +2,7 @@ import pandas as pd
 import streamlit as st
 import time
 
-# Importação de dados do GSC. Colunas necessárias: Landing Page, Query e Url clicks
+# Importação de dados do GSC. Colunas necessárias: Landing Page, Query e Url Clicks
 def load_data(file):
     gsc_data = pd.read_csv(file)
     gsc_data = gsc_data[~gsc_data['Landing Page'].str.contains("#")]
@@ -10,40 +10,46 @@ def load_data(file):
 
 # Agrupamento de keywords e cliques por URL
 def group_keywords(gsc_data):
-    kwd_by_urls = gsc_data.groupby('Landing Page')['Query'].apply(list)
-    clicks_by_urls = gsc_data.groupby('Landing Page')['Url Clicks'].sum()
+    kwd_by_urls = gsc_data.groupby('Landing Page').agg({'Query': list, 'Url Clicks': 'sum'})
     kwd_by_urls_df = pd.DataFrame(kwd_by_urls)
-    kwd_by_urls_df['Total Clicks'] = clicks_by_urls
     return kwd_by_urls_df
 
-# Função para checar páginas com keywords compartilhadas e somar cliques apenas das keywords comuns
-def keywords_similares(row, gsc_data, kwd_by_urls_df, percent):
+# Função que irá checar as páginas ranqueando para os mesmos termos e contar as keywords semelhantes
+def keywords_similares(row, kwd_by_urls_df, percent):
     url_atual = row.name
     kwds_atuais = set(row['Query'])
     
     if len(kwds_atuais) < 10:
-        return [], None  # Retorna vazio e sem URL a ser mantida
+        return [], 0
     
     urls_similares = []
-    max_clicks = 0
-    url_to_keep = url_atual  # Inicializa com a URL atual
+    num_keywords_semelhantes = []
 
-    for url, queries in kwd_by_urls_df['Query'].items():
+    for url, queries in kwd_by_urls_df.itertuples():
         if url != url_atual:
-            kwds_compartilhadas = kwds_atuais.intersection(set(queries))
+            kwds_compartilhadas = set(queries).intersection(kwds_atuais)
             if len(kwds_compartilhadas) >= percent * len(kwds_atuais):
                 urls_similares.append(url)
+                num_keywords_semelhantes.append(len(kwds_compartilhadas))
+    
+    return urls_similares, num_keywords_semelhantes
 
-                # Soma os cliques das keywords compartilhadas
-                cliques_compartilhados = gsc_data[(gsc_data['Landing Page'] == url) & 
-                                                  (gsc_data['Query'].isin(kwds_compartilhadas))]['Url clicks'].sum()
-                
-                # Atualiza a URL a ser mantida caso encontre mais cliques nas keywords compartilhadas
-                if cliques_compartilhados > max_clicks:
-                    max_clicks = cliques_compartilhados
-                    url_to_keep = url
-
-    return urls_similares, url_to_keep
+# Função para identificar a URL com mais cliques e marcar a outra para descartar
+def select_url_to_keep(row, kwd_by_urls_df):
+    urls_similares = row['URLs Semelhantes']
+    if not urls_similares:
+        return None
+    
+    max_clicks = row['Url Clicks']
+    url_to_keep = row.name
+    
+    for url in urls_similares:
+        clicks = kwd_by_urls_df.loc[url, 'Url Clicks']
+        if clicks > max_clicks:
+            max_clicks = clicks
+            url_to_keep = url
+    
+    return url_to_keep
 
 def main():
     st.title("Encontre páginas semelhantes com dados do GSC")
@@ -73,7 +79,6 @@ def main():
     
     if st.button('Iniciar'):
         if uploaded_file is not None:
-            # Inicia a barra de progresso
             progress_bar = st.progress(0)
             
             gsc_data = load_data(uploaded_file)
@@ -82,15 +87,19 @@ def main():
             kwd_by_urls_df = group_keywords(gsc_data)
             progress_bar.progress(66)
             
-            # Aplicação da função acima e seleção da URL com mais cliques nas keywords compartilhadas
-            kwd_by_urls_df['URLs Semelhantes'], kwd_by_urls_df['URL a ser mantida'] = zip(
-                *kwd_by_urls_df.apply(keywords_similares, args=(gsc_data, kwd_by_urls_df, percent), axis=1)
+            # Aplicação da função e criação das colunas de URLs semelhantes e nº de keywords semelhantes
+            kwd_by_urls_df[['URLs Semelhantes', 'Nº de Keywords Semelhantes']] = kwd_by_urls_df.apply(
+                lambda row: keywords_similares(row, kwd_by_urls_df, percent),
+                axis=1,
+                result_type="expand"
             )
             kwd_by_urls_df = kwd_by_urls_df[kwd_by_urls_df['URLs Semelhantes'].apply(lambda x: len(x) != 0)]
             
-            progress_bar.progress(100)
+            # Seleção da URL a ser mantida
+            kwd_by_urls_df['URL para Manter'] = kwd_by_urls_df.apply(select_url_to_keep, args=(kwd_by_urls_df,), axis=1)
             
-            st.write(kwd_by_urls_df)
+            progress_bar.progress(100)
+            st.write(kwd_by_urls_df[['Query', 'URLs Semelhantes', 'Nº de Keywords Semelhantes', 'Url Clicks', 'URL para Manter']])
         else:
             st.error('Por favor, faça o upload de um arquivo CSV.')
 
