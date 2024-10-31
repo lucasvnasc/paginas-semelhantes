@@ -59,9 +59,9 @@ def keywords_similares(row, grouped_df, percent):
         return pd.Series({
             'URLs Semelhantes': [],
             'Termos Compartilhados': [],
-            'Quantidade de Termos Compartilhados': [],
+            '# Termos Compartilhados': [],
             'URL a Manter': url_atual,
-            'Cliques da URL a Manter': clicks_atual
+            'Cliques': clicks_atual
         })
     
     similares_info = []
@@ -75,16 +75,16 @@ def keywords_similares(row, grouped_df, percent):
                 similares_info.append({
                     'URL Semelhante': url,
                     'Termos Compartilhados': list(kwds_compartilhadas),
-                    'Quantidade de Termos Compartilhados': quantidade_compartilhada
+                    '# Termos Compartilhados': quantidade_compartilhada
                 })
     
     if not similares_info:
         return pd.Series({
             'URLs Semelhantes': [],
             'Termos Compartilhados': [],
-            'Quantidade de Termos Compartilhados': [],
+            '# Termos Compartilhados': [],
             'URL a Manter': url_atual,
-            'Cliques da URL a Manter': clicks_atual
+            'Cliques': clicks_atual
         })
     
     # Determina qual URL manter (URL com maior número de cliques)
@@ -99,9 +99,9 @@ def keywords_similares(row, grouped_df, percent):
     return pd.Series({
         'URLs Semelhantes': [info['URL Semelhante'] for info in similares_final],
         'Termos Compartilhados': [info['Termos Compartilhados'] for info in similares_final],
-        'Quantidade de Termos Compartilhados': [info['Quantidade de Termos Compartilhados'] for info in similares_final],
+        '# Termos Compartilhados': [info['# Termos Compartilhados'] for info in similares_final],
         'URL a Manter': url_a_manter,
-        'Cliques da URL a Manter': cliques_a_manter
+        'Cliques': cliques_a_manter
     })
 
 def main():
@@ -160,8 +160,8 @@ def main():
                     
                     # Permitir download dos resultados
                     csv = resultados_filtrados[['URLs Semelhantes', 'Termos Compartilhados', 
-                                                'Quantidade de Termos Compartilhados', 
-                                                'URL a Manter', 'Cliques da URL a Manter']].to_csv(index=True).encode('utf-8')
+                                                '# Termos Compartilhados', 
+                                                'URL a Manter', 'Cliques']].to_csv(index=True).encode('utf-8')
                     st.download_button(
                         label="Download dos Resultados",
                         data=csv,
