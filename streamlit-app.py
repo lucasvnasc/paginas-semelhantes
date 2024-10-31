@@ -51,7 +51,21 @@ def main():
     with st.expander("Leia antes de usar"):
         st.write("""
         **Como conseguir os dados do GSC?**
-        ...
+
+        1. Crie um dashboard no Looker Studio com o gráfico de 'Tabela'.
+        2. Na tabela, insira como dimensão os campos Landing Page, Query e Url clicks.
+        3. Filtre o período que deseja coletar os dados (sugestão: últimos 30 dias)
+        4. Nos três pontos da tabela, clique em exportar para CSV.
+        Verifique se o arquivo .csv exportado possui as colunas Landing Page e Query (nomeadas exatamente desta forma)
+
+        **Por que exportar os dados pelo Looker Studio?**
+        
+        O Search Console possui uma limitação de 1000 linhas. No Looker Studio, você pode expandir essa limitação, conseguindo exportar quase tudo que precisa.
+        Porém, ainda assim existe limitação. Portanto, a depender do tamanho do seu site, alguns dados podem ser truncados. O ideal é exportar via BigQuery ou outra solução de big data que permita extrair os dados do GSC.
+        
+        **O que é a porcentagem pedida?**
+
+        Define o número de keywords que uma página compartilha com as demais. Por padrão, definimos 80%. Então, o app vai verificar com quais outras URLs uma determinada página compartilha, no mínimo, 80% das keywords. Se for abaixo de 80%, não será considerado.
         """)
 
     uploaded_file = st.file_uploader("Escolha um arquivo CSV", type="csv")
