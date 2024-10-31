@@ -82,6 +82,7 @@ def encontrar_grupos_similares(grouped_df, percent):
 def processar_grupos(grupos, grouped_df):
     resultados = []
     for grupo in grupos:
+        # Combinar todas as queries do grupo para encontrar termos compartilhados
         termos_compartilhados = set.intersection(*(grouped_df.at[url, 'Query'] for url in grupo))
         numero_termos_compartilhados = len(termos_compartilhados)
         
@@ -90,12 +91,15 @@ def processar_grupos(grupos, grouped_df):
         url_a_manter = cliques_urls.idxmax()
         cliques_a_manter = cliques_urls.max()
         
-        # URLs semelhantes excluindo a URL a manter
-        urls_semelhantes = [url for url in grupo if url != url_a_manter]
+        # URLs semelhantes (todas as do grupo)
+        urls_semelhantes = ', '.join(grupo)
+        
+        # Termos compartilhados como string separado por vírgulas
+        termos_compartilhados_str = ', '.join(termos_compartilhados)
         
         resultados.append({
-            'URLs Semelhantes': ', '.join(urls_semelhantes),
-            'Termos Compartilhados': ', '.join(termos_compartilhados),
+            'URLs Semelhantes': urls_semelhantes,
+            'Termos Compartilhados': termos_compartilhados_str,
             '# Termos Compartilhados': numero_termos_compartilhados,
             'URL a Manter': url_a_manter,
             'Cliques': cliques_a_manter
