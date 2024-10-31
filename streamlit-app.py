@@ -20,12 +20,13 @@ def keywords_similares(row, kwd_by_urls_df, percent):
     kwds_atuais = set(row['Query'])
     
     if len(kwds_atuais) < 10:
-        return [], 0
+        return [], []
     
     urls_similares = []
     num_keywords_semelhantes = []
 
-    for url, queries in kwd_by_urls_df.itertuples():
+    for url, data in kwd_by_urls_df.iterrows():
+        queries = data['Query']
         if url != url_atual:
             kwds_compartilhadas = set(queries).intersection(kwds_atuais)
             if len(kwds_compartilhadas) >= percent * len(kwds_atuais):
