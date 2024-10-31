@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import time  # Importado para simulação de tempo no progresso
 
 # Função para carregar os dados do arquivo CSV
 def load_data(file):
@@ -59,30 +58,17 @@ def main():
     
     # Instruções
     st.write("""
-        **Como conseguir os dados do GSC?**
-
-        1. Crie um dashboard no Looker Studio com o gráfico de 'Tabela'.
-        2. Na tabela, insira como dimensão os campos Landing Page, Query e Url clicks.
-        3. Filtre o período que deseja coletar os dados (sugestão: últimos 30 dias)
-        4. Nos três pontos da tabela, clique em exportar para CSV.
-        Verifique se o arquivo .csv exportado possui as colunas Landing Page e Query (nomeadas exatamente desta forma)
-
-        **Por que exportar os dados pelo Looker Studio?**
-        
-        O Search Console possui uma limitação de 1000 linhas. No Looker Studio, você pode expandir essa limitação, conseguindo exportar quase tudo que precisa.
-        Porém, ainda assim existe limitação. Portanto, a depender do tamanho do seu site, alguns dados podem ser truncados. O ideal é exportar via BigQuery ou outra solução de big data que permita extrair os dados do GSC.
-        
-        **O que é a porcentagem pedida?**
-
-        Define o número de keywords que uma página compartilha com as demais. Por padrão, definimos 80%. Então, o app vai verificar com quais outras URLs uma determinada página compartilha, no mínimo, 80% das keywords. Se for abaixo de 80%, não será considerado.
-        """)
+        Este aplicativo ajuda a identificar URLs que compartilham um volume significativo de keywords similares,
+        indicando URLs que podem estar competindo entre si no Google. 
+        Carregue um arquivo CSV contendo as colunas "Landing Page", "Query" e "Url Clicks".
+    """)
     
     # Upload do arquivo
     uploaded_file = st.file_uploader("Carregue o arquivo CSV com os dados do GSC", type="csv")
     
     if uploaded_file:
         # Percentual de similaridade
-        percent = st.slider("Percentual mínimo de similaridade de keywords:", 0.1, 1.0, 0.8)
+        percent = st.slider("Percentual mínimo de similaridade de keywords para identificar URLs competindo entre si:", 0.1, 1.0, 0.8)
         
         # Carregar os dados
         gsc_data = load_data(uploaded_file)
@@ -92,14 +78,12 @@ def main():
         kwd_by_urls_df = group_keywords(gsc_data)
         st.write("Agrupamento das keywords por URL concluído.")
         
-        # Barra de progresso
-        progress_bar = st.progress(0)
-        total_rows = len(kwd_by_urls_df)
-        
-        # Identificar URLs semelhantes e número de keywords semelhantes com progresso
-        for i, row in kwd_by_urls_df.iterrows():
-            kwd_by_urls_df.at[row.name, ['URLs Semelhantes', 'Nº de Keywords Semelhantes']] = keywords_similares(row, kwd_by_urls_df, percent)
-            progress_bar.progress((i + 1) / total_rows)
+        # Identificar URLs semelhantes e número de keywords semelhantes
+        kwd_by_urls_df[['URLs Semelhantes', 'Nº de Keywords Semelhantes']] = kwd_by_urls_df.apply(
+            lambda row: keywords_similares(row, kwd_by_urls_df, percent),
+            axis=1,
+            result_type="expand"
+        )
         
         # Filtrar para apenas URLs com semelhantes
         kwd_by_urls_df = kwd_by_urls_df[kwd_by_urls_df['URLs Semelhantes'].apply(lambda x: len(x) != 0)]
