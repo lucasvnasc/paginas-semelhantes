@@ -1,26 +1,7 @@
 import pandas as pd
 import streamlit as st
-from collections import defaultdict
-from joblib import Parallel, delayed
-from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.metrics import jaccard_score
-import time
 
-# Caching das funções para melhorar a performance
-@st.cache_data
-def load_data(file):
-    gsc_data = pd.read_csv(file, dtype={
-        'Landing Page': 'category',
-        'Query': 'category',
-        'Url Clicks': 'int32'
-    })
-    # Filtra URLs que não contêm '#'
-    gsc_data = gsc_data[~gsc_data['Landing Page'].str.contains("#")]
-    
-    # Valida e limpa os dados
-    gsc_data = validate_and_clean_data(gsc_data)
-    return gsc_data
-
+# Função para validar e limpar os dados
 def validate_and_clean_data(gsc_data):
     # Remover linhas com valores ausentes nas colunas essenciais
     gsc_data = gsc_data.dropna(subset=['Landing Page', 'Query', 'Url Clicks'])
@@ -39,6 +20,22 @@ def validate_and_clean_data(gsc_data):
     
     return gsc_data
 
+# Importação de dados do GSC. Colunas necessárias: Landing Page, Query e Url Clicks
+@st.cache_data
+def load_data(file):
+    gsc_data = pd.read_csv(file, dtype={
+        'Landing Page': 'category',
+        'Query': 'category',
+        'Url Clicks': 'int32'
+    })
+    # Filtra URLs que não contêm '#'
+    gsc_data = gsc_data[~gsc_data['Landing Page'].str.contains("#")]
+    
+    # Valida e limpa os dados
+    gsc_data = validate_and_clean_data(gsc_data)
+    return gsc_data
+
+# Agrupamento de keywords e cliques por URL
 @st.cache_data
 def group_data(gsc_data):
     # Agrupa as queries por Landing Page e converte para conjuntos
@@ -52,82 +49,60 @@ def group_data(gsc_data):
     })
     return grouped_df
 
-@st.cache_data
-def create_inverted_index(grouped_df):
-    inverted_index = defaultdict(set)
-    for url, keywords in grouped_df['Query'].items():
-        for keyword in keywords:
-            inverted_index[keyword].add(url)
-    return inverted_index
-
-def process_url(url, grouped_df, inverted_index, percent, urls_processadas):
-    if url in urls_processadas:
-        return None
-    row = grouped_df.loc[url]
+# Função que irá checar as páginas ranqueando para os mesmos termos e determinar qual URL manter
+def keywords_similares(row, grouped_df, percent):
+    url_atual = row.name
     kwds_atuais = row['Query']
-    num_kwds = len(kwds_atuais)
-    min_shared = int(percent * num_kwds)
+    clicks_atual = row['Url Clicks']
     
-    if num_kwds < 10:
-        return None
+    if len(kwds_atuais) < 10:
+        return pd.Series({
+            'URLs Semelhantes': [],
+            'Termos Compartilhados': [],
+            'Quantidade de Termos Compartilhados': [],
+            'URL a Manter': url_atual,
+            'Cliques da URL a Manter': clicks_atual
+        })
     
     similares_info = []
-    urls_potential = set()
     
-    # Utilizar o index invertido para encontrar URLs que compartilham keywords
-    for kw in kwds_atuais:
-        urls_potential.update(inverted_index[kw])
-    
-    urls_potential.discard(url)  # Remover a própria URL
-    
-    for similar_url in urls_potential:
-        kwds_compartilhadas = grouped_df.at[url, 'Query'].intersection(grouped_df.at[similar_url, 'Query'])
-        quantidade_compartilhada = len(kwds_compartilhadas)
-        if quantidade_compartilhada >= min_shared:
-            similares_info.append({
-                'URL Semelhante': similar_url,
-                'Termos Compartilhados': list(kwds_compartilhadas),
-                'Quantidade de Termos Compartilhados': quantidade_compartilhada
-            })
+    for url, queries in grouped_df['Query'].items():
+        if url != url_atual:
+            kwds_compartilhadas = kwds_atuais.intersection(queries)
+            quantidade_compartilhada = len(kwds_compartilhadas)
+            percentual_similaridade = quantidade_compartilhada / len(kwds_atuais)
+            if percentual_similaridade >= percent:
+                similares_info.append({
+                    'URL Semelhante': url,
+                    'Termos Compartilhados': list(kwds_compartilhadas),
+                    'Quantidade de Termos Compartilhados': quantidade_compartilhada
+                })
     
     if not similares_info:
-        return None
+        return pd.Series({
+            'URLs Semelhantes': [],
+            'Termos Compartilhados': [],
+            'Quantidade de Termos Compartilhados': [],
+            'URL a Manter': url_atual,
+            'Cliques da URL a Manter': clicks_atual
+        })
     
     # Determina qual URL manter (URL com maior número de cliques)
-    todas_urls = [url] + [info['URL Semelhante'] for info in similares_info]
+    todas_urls = [url_atual] + [info['URL Semelhante'] for info in similares_info]
     cliques_urls = grouped_df.loc[todas_urls, 'Url Clicks']
     url_a_manter = cliques_urls.idxmax()
     cliques_a_manter = cliques_urls.max()
     
-    # Atualiza o conjunto de URLs processadas
-    urls_processadas.update(todas_urls)
+    # Filtra os similares que não são a URL a manter
+    similares_final = [info for info in similares_info if info['URL Semelhante'] != url_a_manter]
     
-    return {
-        'URL': url,
-        'URLs Semelhantes': [info['URL Semelhante'] for info in similares_info],
-        'Termos Compartilhados': [info['Termos Compartilhados'] for info in similares_info],
-        'Quantidade de Termos Compartilhados': [info['Quantidade de Termos Compartilhados'] for info in similares_info],
+    return pd.Series({
+        'URLs Semelhantes': [info['URL Semelhante'] for info in similares_final],
+        'Termos Compartilhados': [info['Termos Compartilhados'] for info in similares_final],
+        'Quantidade de Termos Compartilhados': [info['Quantidade de Termos Compartilhados'] for info in similares_final],
         'URL a Manter': url_a_manter,
         'Cliques da URL a Manter': cliques_a_manter
-    }
-
-def validate_data(gsc_data):
-    # Remover linhas com valores ausentes nas colunas essenciais
-    gsc_data = gsc_data.dropna(subset=['Landing Page', 'Query', 'Url Clicks'])
-    
-    # Remover duplicatas
-    gsc_data = gsc_data.drop_duplicates()
-    
-    # Converter URLs para formato consistente (por exemplo, remover trailing slashes)
-    gsc_data['Landing Page'] = gsc_data['Landing Page'].str.rstrip('/')
-    
-    # Padronizar keywords para minúsculas
-    gsc_data['Query'] = gsc_data['Query'].str.lower()
-    
-    # Garantir que 'Url Clicks' seja inteiro positivo
-    gsc_data = gsc_data[gsc_data['Url Clicks'] >= 0]
-    
-    return gsc_data
+    })
 
 def main():
     st.title("Encontre páginas semelhantes com dados do GSC")
@@ -135,24 +110,24 @@ def main():
     with st.expander("Leia antes de usar"):
         st.write("""
         **Como conseguir os dados do GSC?**
-    
+
         1. Crie um dashboard no Looker Studio com o gráfico de 'Tabela'.
         2. Na tabela, insira como dimensão os campos Landing Page, Query e Url Clicks.
         3. Filtre o período que deseja coletar os dados (sugestão: últimos 30 dias)
         4. Nos três pontos da tabela, clique em exportar para CSV.
         Verifique se o arquivo .csv exportado possui as colunas Landing Page, Query e Url Clicks (nomeadas exatamente desta forma)
-    
+
         **Por que exportar os dados pelo Looker Studio?**
         
         O Search Console possui uma limitação de 1000 linhas. No Looker Studio, você pode expandir essa limitação, conseguindo exportar quase tudo que precisa.
         Porém, ainda assim existe limitação. Portanto, a depender do tamanho do seu site, alguns dados podem ser truncados. O ideal é exportar via BigQuery ou outra solução de big data que permita extrair os dados do GSC.
         
         **O que é a porcentagem pedida?**
-    
+
         Define o número de keywords que uma página compartilha com as demais. Por padrão, definimos 80%. Então, o app vai verificar com quais outras URLs uma determinada página compartilha, no mínimo, 80% das keywords. Se for abaixo de 80%, não será considerado.
-    
+
         **Como a URL a ser mantida é escolhida?**
-    
+
         Quando duas ou mais URLs compartilham uma porcentagem significativa de keywords, a URL que será mantida é aquela que possui o maior número total de cliques. Isso ajuda a manter a página que está gerando mais tráfego.
         """)
     
@@ -162,44 +137,31 @@ def main():
     if st.button('Iniciar'):
         if uploaded_file is not None:
             with st.spinner('Processando...'):
-                start_time = time.time()
-                
                 # Carrega os dados
                 gsc_data = load_data(uploaded_file)
-                st.write(f"Dados carregados em {time.time() - start_time:.2f} segundos.")
                 
                 # Agrupa as keywords e cliques por URL
-                start_group = time.time()
                 grouped_df = group_data(gsc_data)
-                st.write(f"Dados agrupados em {time.time() - start_group:.2f} segundos.")
                 
-                # Cria o index invertido
-                start_index = time.time()
-                inverted_index = create_inverted_index(grouped_df)
-                st.write(f"Index invertido criado em {time.time() - start_index:.2f} segundos.")
+                # Aplica a função de encontrar URLs similares e determinar qual manter
+                resultados = grouped_df.apply(keywords_similares, axis=1, args=(grouped_df, percent))
                 
-                # Inicializa o conjunto de URLs já processadas
-                urls_processadas = set()
+                # Combina os resultados com o DataFrame original
+                resultados_df = grouped_df.join(resultados)
                 
-                # Paraleliza o processamento das URLs
-                start_process = time.time()
-                resultados = Parallel(n_jobs=-1)(
-                    delayed(process_url)(url, grouped_df, inverted_index, percent, urls_processadas) 
-                    for url in grouped_df.index
-                )
-                st.write(f"URLs processadas em {time.time() - start_process:.2f} segundos.")
+                # Filtra apenas as URLs que têm URLs semelhantes
+                resultados_filtrados = resultados_df[resultados_df['URLs Semelhantes'].map(len) > 0]
                 
-                # Filtra resultados nulos
-                resultados = [res for res in resultados if res is not None]
-                
-                # Cria um DataFrame para exibir os resultados
-                if resultados:
-                    resultados_df = pd.DataFrame(resultados)
+                if not resultados_filtrados.empty:
                     st.success("Processamento concluído!")
-                    st.dataframe(resultados_df)
+                    st.dataframe(resultados_filtrados[['URLs Semelhantes', 'Termos Compartilhados', 
+                                                      'Quantidade de Termos Compartilhados', 
+                                                      'URL a Manter', 'Cliques da URL a Manter']])
                     
                     # Permitir download dos resultados
-                    csv = resultados_df.to_csv(index=False).encode('utf-8')
+                    csv = resultados_filtrados[['URLs Semelhantes', 'Termos Compartilhados', 
+                                                'Quantidade de Termos Compartilhados', 
+                                                'URL a Manter', 'Cliques da URL a Manter']].to_csv(index=True).encode('utf-8')
                     st.download_button(
                         label="Download dos Resultados",
                         data=csv,
