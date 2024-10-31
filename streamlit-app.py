@@ -155,8 +155,8 @@ def main():
                 if not resultados_filtrados.empty:
                     st.success("Processamento concluído!")
                     st.dataframe(resultados_filtrados[['URLs Semelhantes', 'Termos Compartilhados', 
-                                                      'Quantidade de Termos Compartilhados', 
-                                                      'URL a Manter', 'Cliques da URL a Manter']])
+                                                      '# Termos Compartilhados', 
+                                                      'URL a Manter', 'Cliques']])
                     
                     # Permitir download dos resultados
                     csv = resultados_filtrados[['URLs Semelhantes', 'Termos Compartilhados', 
