@@ -49,60 +49,58 @@ def group_data(gsc_data):
     })
     return grouped_df
 
-# Função que irá checar as páginas ranqueando para os mesmos termos e determinar qual URL manter
-def keywords_similares(row, grouped_df, percent):
-    url_atual = row.name
-    kwds_atuais = row['Query']
-    clicks_atual = row['Url Clicks']
+# Função para encontrar grupos de URLs semelhantes
+def encontrar_grupos_similares(grouped_df, percent):
+    urls = grouped_df.index.tolist()
+    grupos = []
+    urls_processadas = set()
     
-    if len(kwds_atuais) < 10:
-        return pd.Series({
-            'URLs Semelhantes': [],
-            'Termos Compartilhados': [],
-            '# Termos Compartilhados': [],
-            'URL a Manter': url_atual,
-            'Cliques': clicks_atual
-        })
-    
-    similares_info = []
-    
-    for url, queries in grouped_df['Query'].items():
-        if url != url_atual:
-            kwds_compartilhadas = kwds_atuais.intersection(queries)
-            quantidade_compartilhada = len(kwds_compartilhadas)
-            percentual_similaridade = quantidade_compartilhada / len(kwds_atuais)
+    for i, url in enumerate(urls):
+        if url in urls_processadas:
+            continue
+        grupo = [url]
+        urls_processadas.add(url)
+        kwds_url = grouped_df.at[url, 'Query']
+        
+        for j in range(i + 1, len(urls)):
+            outra_url = urls[j]
+            if outra_url in urls_processadas:
+                continue
+            kwds_outra = grouped_df.at[outra_url, 'Query']
+            termos_compartilhados = kwds_url.intersection(kwds_outra)
+            percentual_similaridade = len(termos_compartilhados) / len(kwds_url)
             if percentual_similaridade >= percent:
-                similares_info.append({
-                    'URL Semelhante': url,
-                    'Termos Compartilhados': list(kwds_compartilhadas),
-                    '# Termos Compartilhados': quantidade_compartilhada
-                })
+                grupo.append(outra_url)
+                urls_processadas.add(outra_url)
+        
+        if len(grupo) > 1:
+            grupos.append(grupo)
     
-    if not similares_info:
-        return pd.Series({
-            'URLs Semelhantes': [],
-            'Termos Compartilhados': [],
-            '# Termos Compartilhados': [],
-            'URL a Manter': url_atual,
-            'Cliques': clicks_atual
+    return grupos
+
+# Função para processar os grupos e determinar a URL a manter
+def processar_grupos(grupos, grouped_df):
+    resultados = []
+    for grupo in grupos:
+        termos_compartilhados = set.intersection(*(grouped_df.at[url, 'Query'] for url in grupo))
+        numero_termos_compartilhados = len(termos_compartilhados)
+        
+        # Determina qual URL manter (URL com maior número de cliques)
+        cliques_urls = grouped_df.loc[grupo, 'Url Clicks']
+        url_a_manter = cliques_urls.idxmax()
+        cliques_a_manter = cliques_urls.max()
+        
+        # URLs semelhantes excluindo a URL a manter
+        urls_semelhantes = [url for url in grupo if url != url_a_manter]
+        
+        resultados.append({
+            'URLs Semelhantes': ', '.join(urls_semelhantes),
+            'Termos Compartilhados': ', '.join(termos_compartilhados),
+            '# Termos Compartilhados': numero_termos_compartilhados,
+            'URL a Manter': url_a_manter,
+            'Cliques': cliques_a_manter
         })
-    
-    # Determina qual URL manter (URL com maior número de cliques)
-    todas_urls = [url_atual] + [info['URL Semelhante'] for info in similares_info]
-    cliques_urls = grouped_df.loc[todas_urls, 'Url Clicks']
-    url_a_manter = cliques_urls.idxmax()
-    cliques_a_manter = cliques_urls.max()
-    
-    # Filtra os similares que não são a URL a manter
-    similares_final = [info for info in similares_info if info['URL Semelhante'] != url_a_manter]
-    
-    return pd.Series({
-        'URLs Semelhantes': [info['URL Semelhante'] for info in similares_final],
-        'Termos Compartilhados': [info['Termos Compartilhados'] for info in similares_final],
-        '# Termos Compartilhados': [info['# Termos Compartilhados'] for info in similares_final],
-        'URL a Manter': url_a_manter,
-        'Cliques': cliques_a_manter
-    })
+    return pd.DataFrame(resultados)
 
 def main():
     st.title("Encontre páginas semelhantes com dados do GSC")
@@ -143,25 +141,22 @@ def main():
                 # Agrupa as keywords e cliques por URL
                 grouped_df = group_data(gsc_data)
                 
-                # Aplica a função de encontrar URLs similares e determinar qual manter
-                resultados = grouped_df.apply(keywords_similares, axis=1, args=(grouped_df, percent))
+                # Encontra grupos de URLs semelhantes
+                grupos_similares = encontrar_grupos_similares(grouped_df, percent)
                 
-                # Combina os resultados com o DataFrame original
-                resultados_df = grouped_df.join(resultados)
+                # Processa os grupos para determinar a URL a manter
+                resultados_df = processar_grupos(grupos_similares, grouped_df)
                 
-                # Filtra apenas as URLs que têm URLs semelhantes
-                resultados_filtrados = resultados_df[resultados_df['URLs Semelhantes'].map(len) > 0]
-                
-                if not resultados_filtrados.empty:
+                if not resultados_df.empty:
                     st.success("Processamento concluído!")
-                    st.dataframe(resultados_filtrados[['URLs Semelhantes', 'Termos Compartilhados', 
-                                                      '# Termos Compartilhados', 
-                                                      'URL a Manter', 'Cliques']])
+                    st.dataframe(resultados_df[['URLs Semelhantes', 'Termos Compartilhados', 
+                                                '# Termos Compartilhados', 
+                                                'URL a Manter', 'Cliques']])
                     
                     # Permitir download dos resultados
-                    csv = resultados_filtrados[['URLs Semelhantes', 'Termos Compartilhados', 
-                                                '# Termos Compartilhados', 
-                                                'URL a Manter', 'Cliques']].to_csv(index=True).encode('utf-8')
+                    csv = resultados_df[['URLs Semelhantes', 'Termos Compartilhados', 
+                                         '# Termos Compartilhados', 
+                                         'URL a Manter', 'Cliques']].to_csv(index=False).encode('utf-8')
                     st.download_button(
                         label="Download dos Resultados",
                         data=csv,
