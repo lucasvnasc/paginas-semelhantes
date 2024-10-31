@@ -4,6 +4,7 @@ from collections import defaultdict
 from joblib import Parallel, delayed
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.metrics import jaccard_score
+import time
 
 # Caching das funções para melhorar a performance
 @st.cache_data
@@ -15,6 +16,27 @@ def load_data(file):
     })
     # Filtra URLs que não contêm '#'
     gsc_data = gsc_data[~gsc_data['Landing Page'].str.contains("#")]
+    
+    # Valida e limpa os dados
+    gsc_data = validate_and_clean_data(gsc_data)
+    return gsc_data
+
+def validate_and_clean_data(gsc_data):
+    # Remover linhas com valores ausentes nas colunas essenciais
+    gsc_data = gsc_data.dropna(subset=['Landing Page', 'Query', 'Url Clicks'])
+    
+    # Remover duplicatas
+    gsc_data = gsc_data.drop_duplicates()
+    
+    # Converter URLs para formato consistente (por exemplo, remover trailing slashes)
+    gsc_data['Landing Page'] = gsc_data['Landing Page'].str.rstrip('/')
+    
+    # Padronizar keywords para minúsculas
+    gsc_data['Query'] = gsc_data['Query'].str.lower()
+    
+    # Garantir que 'Url Clicks' seja inteiro positivo
+    gsc_data = gsc_data[gsc_data['Url Clicks'] >= 0]
+    
     return gsc_data
 
 @st.cache_data
@@ -89,6 +111,24 @@ def process_url(url, grouped_df, inverted_index, percent, urls_processadas):
         'Cliques da URL a Manter': cliques_a_manter
     }
 
+def validate_data(gsc_data):
+    # Remover linhas com valores ausentes nas colunas essenciais
+    gsc_data = gsc_data.dropna(subset=['Landing Page', 'Query', 'Url Clicks'])
+    
+    # Remover duplicatas
+    gsc_data = gsc_data.drop_duplicates()
+    
+    # Converter URLs para formato consistente (por exemplo, remover trailing slashes)
+    gsc_data['Landing Page'] = gsc_data['Landing Page'].str.rstrip('/')
+    
+    # Padronizar keywords para minúsculas
+    gsc_data['Query'] = gsc_data['Query'].str.lower()
+    
+    # Garantir que 'Url Clicks' seja inteiro positivo
+    gsc_data = gsc_data[gsc_data['Url Clicks'] >= 0]
+    
+    return gsc_data
+
 def main():
     st.title("Encontre páginas semelhantes com dados do GSC")
     
@@ -122,23 +162,32 @@ def main():
     if st.button('Iniciar'):
         if uploaded_file is not None:
             with st.spinner('Processando...'):
+                start_time = time.time()
+                
                 # Carrega os dados
                 gsc_data = load_data(uploaded_file)
+                st.write(f"Dados carregados em {time.time() - start_time:.2f} segundos.")
                 
                 # Agrupa as keywords e cliques por URL
+                start_group = time.time()
                 grouped_df = group_data(gsc_data)
+                st.write(f"Dados agrupados em {time.time() - start_group:.2f} segundos.")
                 
                 # Cria o index invertido
+                start_index = time.time()
                 inverted_index = create_inverted_index(grouped_df)
+                st.write(f"Index invertido criado em {time.time() - start_index:.2f} segundos.")
                 
                 # Inicializa o conjunto de URLs já processadas
                 urls_processadas = set()
                 
                 # Paraleliza o processamento das URLs
+                start_process = time.time()
                 resultados = Parallel(n_jobs=-1)(
                     delayed(process_url)(url, grouped_df, inverted_index, percent, urls_processadas) 
                     for url in grouped_df.index
                 )
+                st.write(f"URLs processadas em {time.time() - start_process:.2f} segundos.")
                 
                 # Filtra resultados nulos
                 resultados = [res for res in resultados if res is not None]
