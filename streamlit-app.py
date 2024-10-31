@@ -11,7 +11,7 @@ def load_data(file):
 # Agrupamento de keywords e cliques por URL
 def group_keywords(gsc_data):
     kwd_by_urls = gsc_data.groupby('Landing Page')['Query'].apply(list)
-    clicks_by_urls = gsc_data.groupby('Landing Page')['Url clicks'].sum()
+    clicks_by_urls = gsc_data.groupby('Landing Page')['Url Clicks'].sum()
     kwd_by_urls_df = pd.DataFrame(kwd_by_urls)
     kwd_by_urls_df['Total Clicks'] = clicks_by_urls
     return kwd_by_urls_df
